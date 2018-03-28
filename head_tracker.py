@@ -7,8 +7,8 @@ from imutils.video import FPS
 import time
 import rospy
 from std_msgs.msg import String
-
-process_time = 20
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
 
 # params for ShiTomasi corner detection
 feature_params = dict(maxCorners=100,
@@ -24,7 +24,18 @@ lk_params = dict(winSize=(15, 15),
 # Create some random colors
 color = np.random.randint(0, 255, (100, 3))
 
-class TRACKER():
+
+class TRACKER:
+
+	def __init__(self):
+
+		self.tracking = False
+		self.detector = dlib.get_frontal_face_detector()
+		self.fps = FPS().start()
+		self.y = []
+		self.tic = time.time()
+		self.toc = time.time()
+		self.frame = None
 
 	def concat_points(self, points, new_points, idx_goodpoints):
 
@@ -47,7 +58,7 @@ class TRACKER():
 
 		return points
 
-	def add_head(self, heads, gray, rect):
+	def add_head(self, gray, rect):
 
 		tracker1 = dlib.correlation_tracker()
 		tracker2 = dlib.correlation_tracker()
@@ -78,7 +89,7 @@ class TRACKER():
 			tracker1.start_track(gray, dlib.rectangle(x, y, x + w, y + h1))
 			tracker2.start_track(gray, dlib.rectangle(x, y2, x + w, y2 + h2))
 
-			heads.append({
+			self.heads.append({
 				'y1': p01[:, 0, 1],
 				'y2': p02[:, 0, 1],
 				'p01': p01,
@@ -93,8 +104,6 @@ class TRACKER():
 
 		except(TypeError):
 			pass
-
-		return heads
 
 	def update_head(self, head, gray, mask, frame):
 
@@ -155,81 +164,84 @@ class TRACKER():
 		else:
 			return head, mask, frame, False
 
+	def get_image(self, msg):
+
+		msg.encoding = "mono16"
+		# Convert ROS image to opencv image.
+		try:
+			bridge = CvBridge()
+			# Need to change encoding
+			self.frame = bridge.imgmsg_to_cv2(msg, "bgr8")
+		except CvBridgeError as e:
+			print(e)
+
 	def process_tracker(self):
 
-		tracking = False
-		trackingQuality1 = 0
-		trackingQuality2 = 0
+		frame = cv2.flip(self.frame, 1)
+		gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+		rects = self.detector(gray, 0)
 
-		detector = dlib.get_frontal_face_detector()
-		cap = cv2.VideoCapture(0)
-		fps = FPS().start()
+		if not self.tracking:
+			print('\nRestart tracking...')
+			self.y = []
+			self.tic = time.time()
+			mask = np.zeros_like(frame)
+			self.heads = []
+			for i, rect in enumerate(rects):
+				self.add_head(gray, rect)
+			self.tracking = True
 
-		while 1:
+		elif len(rects) > len(self.heads):
+			n = len(self.heads) - len(rects)
+			for i, rect in enumerate(rects[n:]):
+				self.add_head(gray, rect)
 
-			_, frame = cap.read()
-			frame = cv2.flip(frame, 1)
-			gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-			rects = detector(gray, 0)
+		for head in self.heads:
+			head, mask, frame, updated = self.update_head(head, gray, mask, frame)
+			if not updated:
+				self.heads.remove(head)
 
-			if not tracking:
-				print('\nRestart tracking...')
-				tic = time.time()
-				mask = np.zeros_like(frame)
-				heads = []
-				for i, rect in enumerate(rects):
-					heads = self.add_head(heads, gray, rect)
-				tracking = True
+		if len(self.heads) == 0:
+			self.tracking = False
 
-			elif len(rects) > len(heads):
-				n = len(heads) - len(rects)
-				for i, rect in enumerate(rects[n:]):
-					heads = self.add_head(heads, gray, rect)
+		frame = cv2.add(frame, mask)
+		cv2.imshow('frame', frame)
+		if cv2.waitKey(5) & 0xFF == ord('q'):
+			sys.exit()
 
-			for head in heads:
-				head, mask, frame, updated = self.update_head(head, gray, mask, frame)
-				if not updated:
-					heads.remove(head)
+		self.toc = time.time()
+		print("Elapsed time: {:.2f} sec".format(self.toc - self.tic))
+		self.fps.update()
 
-			if len(heads) == 0:
-				tracking = False
+		for head in self.heads:
+			self.y.append(np.concatenate((head['y1'], head['y2']), axis=0))
 
-			frame = cv2.add(frame, mask)
-			cv2.imshow('frame', frame)
-			if cv2.waitKey(5) & 0xFF == ord('q'):
-				break
+	def talker(self):
 
-			toc = time.time()
-			print("Elapsed time: {:.2f} sec".format(toc - tic))
-			fps.update()
+		pub = rospy.Publisher('chatter', String, queue_size=10)
+		rospy.init_node('points_tracker', anonymous=True)
+		rospy.Subscriber("/kinect2/sd/image_ir_rect", Image, self.get_image)
+		rate = rospy.Rate(10)  # 10hz
 
-			if toc - tic >= process_time:
-				break
-
-		cap.release()
-		cv2.destroyAllWindows()
-
-		fps.stop()
-		print("\n[INFO] approx. FPS: {:.2f}".format(fps.fps()))
-
-		y = []
-		for head in heads:
-			y.append(np.concatenate((head['y1'], head['y2']), axis=0))
-
-		return y, fps.fps()
+		while not rospy.is_shutdown():
+			self.process_tracker()
+			msg = {
+				'tracked_points': self.y,
+				'fps': self.fps.fps(),
+				'tic': self.tic,
+				'toc': self.toc
+			}
+			pub.publish(msg)
+			rate.sleep()
 
 
 if __name__ == '__main__':
 
 	tracked_points = TRACKER()
-	pub = rospy.Publisher('chatter', String, queue_size=10)
-	rospy.init_node('points_tracker', anonymous=True)
-	rate = rospy.Rate(10)  # 10hz
+	try:
+		tracked_points.talker()
+	except rospy.ROSInterruptException:
+		pass
 
-	while not rospy.is_shutdown():
-		y, fps = tracked_points.process_tracker()
-		rospy.loginfo("TrackedPoints = " + format(y))
-		rospy.loginfo("FPS = " + format(fps))
-		pub.publish("TrackedPoints = " + format(y))
-		pub.publish("FPS = " + format(fps))
-		rate.sleep()
+	tracked_points.fps.stop()
+	print("\n[INFO] approx. FPS: {:.2f}".format(tracked_points.fps()))

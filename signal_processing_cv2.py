@@ -5,10 +5,6 @@ from scipy.signal import butter, filtfilt
 from scipy.interpolate import interp1d
 from pylab import *
 import argparse
-import rospy
-from std_msgs.msg import String
-from sensor_msgs.msg import Image, PointCloud2
-import sensor_msgs.point_cloud2 as pc2
 
 
 class SIGNAL:
@@ -19,17 +15,13 @@ class SIGNAL:
 		self.Ns = 0
 		self.freq = None
 
-	def main_loop(self, msg):
-
-		tic = msg.data['tic']
-		toc = msg.data['toc']
+	def main_loop(self, tracked_points, tic, toc):
 
 		if toc - tic >= self.args.process_time:
-			tracked_points = msg.data['tracked_points']
-			fps = msg.data['fps']
 
 			nb_frames = len(tracked_points)
-			wd = nb_frames/fps
+			wd = toc-tic
+			fps = nb_frames/wd
 			time_axis = np.linspace(0, wd, nb_frames)
 
 			self.Ns = np.ceil(self.args.Fs * nb_frames / fps).astype(int)  # Nb of samples (for 250 Hz)
@@ -67,7 +59,7 @@ class SIGNAL:
 				i += 1
 			plt.xlabel('BPM')
 			plt.ylabel('Amplitude')
-
+	
 			print(str(bpm) + ' beats per min')  # beats per minute
 
 	def pca(self, X):
@@ -140,24 +132,3 @@ class SIGNAL:
 
 		sum = np.sum(power)
 		return (max_power+first_power)/sum	 # Percentage of highest peak and its first harmonic over all power spectrum
-
-
-if __name__ == '__main__':
-
-	# ==================================================================================================================
-	parser = argparse.ArgumentParser(description='Signal Processing of facial tracked points (head_tracker Subscriber Node)')
-	parser.add_argument('--process_time', type=int, default=20, help='Time of acquisition')
-	parser.add_argument('--lowcut', type=int, default=0.75, help='Lowcut frequency for Butterworth filter')
-	parser.add_argument('--highcut', type=int, default=5, help='Highcut frequency for Butterworth filter')
-	parser.add_argument('--Fs', type=int, default=250, help='Interpolated frame rate (Hz)')
-	parser.add_argument('--alpha', type=int, default=0.25, help='% of points to discard')
-
-	args = parser.parse_args()
-	# ==================================================================================================================
-
-	head_tracker = SIGNAL(args)
-	rospy.init_node('head_tracker')
-
-	# TODO: Change Subscriber
-	rospy.Subscriber('/filtered_pcloud', String, head_tracker.main_loop)
-	rospy.spin()
