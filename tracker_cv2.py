@@ -3,7 +3,6 @@ import cv2
 import dlib
 from tools import rect_to_boundingbox
 from acp import *
-from imutils.video import FPS
 import time
 from signal_processing_cv2 import *
 
@@ -27,11 +26,11 @@ class TRACKER:
 
 		self.tracking = False
 		self.detector = dlib.get_frontal_face_detector()
-		self.fps = FPS().start()
-		self.y = []
 		self.tic = time.time()
 		self.toc = time.time()
 		self.signal = signal
+		self.bpm = []
+		self.time = []
 
 	def concat_points(self, points, new_points, idx_goodpoints):
 
@@ -164,6 +163,7 @@ class TRACKER:
 	def process_tracker(self):
 
 		cap = cv2.VideoCapture(0)
+		self.tic0 = time.time()
 
 		while 1:
 
@@ -174,7 +174,6 @@ class TRACKER:
 
 			if not self.tracking:
 				print('\nRestart tracking...')
-				self.y = []
 				self.tic = time.time()
 				mask = np.zeros_like(frame)
 				self.heads = []
@@ -199,12 +198,19 @@ class TRACKER:
 			cv2.imshow('frame', frame)
 
 			self.toc = time.time()
-			print("Elapsed time: {:.2f} sec".format(self.toc - self.tic))
-			self.fps.update()
+			print("Elapsed time: {:.2f} sec     {:.2f} sec".format(self.toc - self.tic0, self.toc - self.tic))
 
 			for head in self.heads:
-				self.y.append(np.concatenate((head['y1'], head['y2']), axis=0))
-				self.signal.main_loop(self.y, self.tic, self.toc)
+				self.y = np.transpose(np.concatenate((head['y1'], head['y2']), axis=0))
+
+				if self.toc - self.tic >= self.signal.args.process_time:
+					try:
+						bpm, self.tracking = self.signal.main_loop(self.y, self.tic, self.toc)
+						self.bpm.append(bpm)
+						self.time.append(self.toc - self.tic0)
+					except:
+						self.tracking = False
+
 
 			if cv2.waitKey(5) & 0xFF == ord('q'):
 				break
@@ -212,15 +218,17 @@ class TRACKER:
 		cap.release()
 		cv2.destroyAllWindows()
 
-		self.fps.stop()
-		print("\n[INFO] approx. FPS: {:.2f}".format(self.fps.fps()))
+		figure()
+		plt.plot(self.time, self.bpm)
+		plt.xlabel('Time (sec)')
+		plt.ylabel('BPM')
 
 
 if __name__ == '__main__':
 
 	# ==================================================================================================================
 	parser = argparse.ArgumentParser(description='Signal Processing of facial tracked points (head_tracker Subscriber Node)')
-	parser.add_argument('--process_time', type=int, default=20, help='Time of acquisition')
+	parser.add_argument('--process_time', type=int, default=10, help='Time of acquisition')
 	parser.add_argument('--lowcut', type=int, default=0.75, help='Lowcut frequency for Butterworth filter')
 	parser.add_argument('--highcut', type=int, default=5, help='Highcut frequency for Butterworth filter')
 	parser.add_argument('--Fs', type=int, default=250, help='Interpolated frame rate (Hz)')
@@ -231,3 +239,20 @@ if __name__ == '__main__':
 
 	tracked_points = TRACKER(SIGNAL(args))
 	tracked_points.process_tracker()
+	plt.show()
+
+	# t_i, _, interp_y, _, _, _, _, _ = pickle.load(open('CHAISE_LEMAY_RAPHAEL_2018_03_22_20_22.p', 'rb'))
+	# wd = t_i[-1]
+	#
+	# tracked_points = SIGNAL(args)
+	#
+	# y = []
+	# bpm = []
+	# for i in range(0, len(t_i)):
+	# 	y.append(interp_y[i])
+	# 	bpm.append(tracked_points.main_loop(y, 0, t_i[i]))
+	#
+	# plt.plot(t_i, bpm)
+	# plt.xlabel('Time (sec)')
+	# plt.ylabel('BPM')
+	# plt.show()

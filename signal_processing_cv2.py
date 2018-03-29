@@ -33,7 +33,7 @@ class SIGNAL:
 
 			periodicities = []
 			spectrums = []
-			for t in np.transpose(T):
+			for t in T:
 				# Interpolate to 250 Hz, filter frequencies and compute fft
 				y = self.signal_processing(t, time_axis, new_time_axis)
 
@@ -48,19 +48,35 @@ class SIGNAL:
 			# Compute diff and find second peak of power spectrum (frequency corresponding to heart pulse)
 			diff = spectrums[idx] - np.concatenate(([0], spectrums[idx][:-1]))
 			diff = np.concatenate((diff[1:], [0]))
-			bpm = 60 * self.freq[np.argsort(diff)[::-1][1] + 1]
+			d = diff[np.argsort(diff)[0]:]
+			d = d[np.where(np.sign(d) == -1)[0][1]:][0]
+			bpm = 60 * self.freq[np.where(diff == d)][0]
+
+			figure()
+			freq = self.freq[np.where(self.freq*60 < 200)] * 60
+			plt.plot(freq, diff[:len(freq)])
+			plt.plot(freq, spectrums[idx][:len(freq)])
+			plt.plot(freq, np.zeros(len(freq)))
 
 			# Plot power spectrum of every component of the pca (same as number of originaly tracked points)
 			# (but only one power spectrum (the one with the highest periodicity) is used)
-			i = 1
-			for t in spectrums:
-				plt.subplot(len(spectrums), 1, i)
-				plt.plot(60 * self.freq[:100], t[:100])
-				i += 1
-			plt.xlabel('BPM')
-			plt.ylabel('Amplitude')
-	
-			print(str(bpm) + ' beats per min')  # beats per minute
+			# i = 1
+			# figure()
+			# for t in spectrums:
+			# 	plt.subplot(np.ceil(len(spectrums)/2).astype(int), 2, i)
+			# 	freq = self.freq[np.where(self.freq*60 < 200)] * 60
+			# 	plt.plot(freq, t[:len(freq)])
+			# 	i += 1
+			# plt.suptitle('Index: ' + str(idx))
+			figure()
+			freq = self.freq[np.where(self.freq * 60 < 200)] * 60
+			plt.plot(freq, spectrums[idx][:len(freq)])
+
+			print('\t\t\t\t\t\t\t\t\t\t' + str(np.ceil(bpm).astype(int)) + ' beats per min')  # beats per minute
+
+			return bpm, False
+		else:
+			return None, True
 
 	def pca(self, X):
 
@@ -99,7 +115,7 @@ class SIGNAL:
 		nyq = 0.5 * self.args.Fs
 		low = self.args.lowcut / nyq
 		high = self.args.highcut / nyq
-		b, a = self.butter(order, [low, high], btype='band')
+		b, a = butter(order, [low, high], btype='band')
 		return b, a
 
 	def butterworth_passband_filter(self, signal, order=5):
