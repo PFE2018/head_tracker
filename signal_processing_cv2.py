@@ -39,30 +39,25 @@ class SIGNAL:
                 y = self.signal_processing(t, time_axis, new_time_axis)
 
                 # Periodicity of power spectrum
-                # p = self.get_periodicity(y)
-                # periodicities.append(p)
+                p = self.get_periodicity(y)
+                periodicities.append(p)
                 spectrums.append(y)
 
-            # # Compute diff and find second peak of power spectrum (frequency corresponding to heart pulse)
-            # diff = spectrums[idx] - np.concatenate(([0], spectrums[idx][:-1]))
-            # diff = np.concatenate((diff[1:], [0]))
-            # d = diff[np.argsort(diff)[0]:]
-            # d = d[np.where(np.sign(d) == -1)[0][1]:][0]
-            # bpm = 60 * self.freq[np.where(diff == d)][0]
+            # Get power spectrum with highest periodicity
+            idx = np.argsort(periodicities)[0]
 
-            # # Get power spectrum with highest periodicity
-            # idx = np.argsort(periodicities)[0]
+            # Compute diff and find second peak of power spectrum (frequency corresponding to heart pulse)
+            diff = spectrums[idx] - np.concatenate(([0], spectrums[idx][:-1]))
+            diff = np.concatenate((diff[1:], [0]))
+            d = diff[np.argsort(diff)[0]:]
+            d = d[np.where(np.sign(d) == -1)[0][1]:][0]
+            bpm = 60 * self.freq[np.where(diff == d)][0]
 
             #figure()
             #freq = self.freq[np.where(self.freq * 60 < 200)] * 60
-            for i,spec in enumerate(spectrums):
+            #for i,spec in enumerate(spectrums):
                 #plt.subplot(np.ceil(len(spectrums) / 2).astype(int), 2, i+1)
                 # Compute diff and find second peak of power spectrum (frequency corresponding to heart pulse)
-                diff = spec - np.concatenate(([0], spec[:-1]))
-                diff = np.concatenate((diff[1:], [0]))
-                d = diff[np.argsort(diff)[0]:]
-                d = d[np.where(np.sign(d) == -1)[0][1]:][0]
-                bpm.append(60 * self.freq[np.where(diff == d)][0])
                 #plt.plot(freq, spec[:len(freq)])
 
             # figure()
@@ -87,7 +82,7 @@ class SIGNAL:
 
             #print('\t\t\t\t\t\t\t\t\t\t' + str(np.ceil(bpm).astype(int)) + ' beats per min')  # beats per minute
 
-            return bpm, spectrums, False
+            return bpm, False
         else:
             return None, True
 

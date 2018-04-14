@@ -3,6 +3,7 @@ import cv2
 import dlib
 from tools import rect_to_boundingbox
 import time
+import pickle
 import rospy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
@@ -40,7 +41,6 @@ class TRACKER:
         self.frame = [0]
         self.signal = signal
         self.bpm = [0]
-        self.spectrums = [0]
         self.time = [0]
         self.start = False
 
@@ -192,13 +192,6 @@ class TRACKER:
         if len(self.frame) > 1 and not self.start:
             self.start = True
             self.tic0 = time.time()
-            # cv2.imshow('frame', self.frame)
-            # gray = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
-            # rects = self.detector(gray, 0)
-            # print(len(rects))
-            # if cv2.waitKey(5) & 0xFF == ord('q'):
-            #     sys.exit()
-
 
         if self.start:
 
@@ -231,7 +224,6 @@ class TRACKER:
             if len(self.heads) == 0:
                 self.tracking = False
                 self.bpm.append(self.bpm[-1])
-                self.spectrums.append(self.spectrums[-1])
                 self.time.append(self.toc - self.tic0)
                 print('\t\t\t\t\t\t\t\t\t\t' + str(np.ceil(self.bpm[-1]).astype(int)) + ' beats per min')  # beats per minute
 
@@ -246,18 +238,14 @@ class TRACKER:
 
                 if self.toc - self.tic >= self.signal.args.process_time:
                     try:
-                        bpm, spectrums, self.tracking = self.signal.main_loop(self.y, self.tic, self.toc)
+                        bpm, self.tracking = self.signal.main_loop(self.y, self.tic, self.toc)
                         self.bpm.append(bpm)
-                        self.spectrums.append([spectrums])
                         self.time.append(self.toc - self.tic0)
                     except:
                         self.bpm.append(self.bpm[-1])
-                        self.spectrums.append(self.spectrums[-1])
                         self.time.append(self.toc - self.tic0)
                         self.tracking = False
                     print('\t\t\t\t\t\t\t\t\t\t' + str(np.ceil(self.bpm[-1]).astype(int)) + ' beats per min')  # beats per minute
-
-
 
             if cv2.waitKey(5) & 0xFF == ord('q'):
                 sys.exit()
@@ -273,7 +261,7 @@ class TRACKER:
         self.toc2 = time.time()
         delta = self.toc2 - self.tic0
 
-        while not rospy.is_shutdown() and delta < 30:
+        while not rospy.is_shutdown() and delta < 300:
             delta = self.toc2 - self.tic0
             self.toc2 = time.time()
             #if self.toc-self.tic0 > 1:
@@ -285,8 +273,6 @@ class TRACKER:
                 # }
                 # pub.publish(msg)
             rate.sleep()
-        #pickle.dump((self.frametot, self.toc), open('acquisition_elo.p', 'wb'))
-
 
 
 if __name__ == '__main__':
@@ -305,43 +291,56 @@ if __name__ == '__main__':
     try:
         tracked_points.talker()
     except rospy.ROSInterruptException:
-        #pickle.dump((tracked_points.frametot, tracked_points.toc), open('acquisition_elo.p', 'wb'), protocol=1)
         pass
 
     #tracked_points.fps.stop()
     #print("\n[INFO] approx. FPS: {:.2f}".format(tracked_points.fps()))
 
-    mat = loadmat('REF_CHAISE_COUTURIER_ELODIE_2018_04_05_19_32.mat')
+    name = 'REF_CHAISE_DRAINVILLE_AXEL_ir_pcl_rgb_2018-04-12-14-58-52'
+
+    mat = loadmat('/media/ncls/Rosbags/refs/' + name + '.mat')
     out = ecg.ecg(signal=mat['data'][0], sampling_rate=mat['samplerate'][0][0], show=False)[6]
 
-    items = True
-    j = 0
+    # items = True
+    # j = 0
 
-    error = []
-    bpms = []
-    while items:
-        bpm = []
-        items = False
-        for i in range(1, len(tracked_points.bpm)):
-            try:
-                if tracked_points.bpm[i][j] != 0:
-                    bpm.append(tracked_points.bpm[i][j])
-                items = True
-            except(IndexError):
-                pass
-        if items:
-            fig = plt.figure()
-            time = tracked_points.time[:len(bpm)]
-            plt.plot(time, bpm)
-            plt.plot(out[:300])
-            plt.xlabel('Time (sec)')
-            plt.ylabel('BPM')
-            fig.savefig('results/results_' + str(j) + '.png')
-            #plt.subplot(8, 2, j + 1)
-            #plt.plot(tracked_points.time[:len(bpm)], bpm)
-            error.append(np.mean(abs(out[:len(bpm)]-bpm)))
-            bpms.append(bpm)
-        j+=1
+    # error = []
+    # bpms = []
+    # while items:
+    #     bpm = []
+    #     items = False
+    #     for i in range(1, len(tracked_points.bpm)):
+    #         try:
+    #             if tracked_points.bpm[i][j] != 0:
+    #                 bpm.append(tracked_points.bpm[i][j])
+    #             items = True
+    #         except(IndexError):
+    #             pass
+    #     if items:
+    #         fig = plt.figure()
+    #         time = tracked_points.time[:len(bpm)]
+    #         plt.plot(time, bpm)
+    #         plt.plot(out[:300])
+    #         plt.xlabel('Time (sec)')
+    #         plt.ylabel('BPM')
+    #         fig.savefig('results/results_' + str(j) + '.png')
+    #         #plt.subplot(8, 2, j + 1)
+    #         #plt.plot(tracked_points.time[:len(bpm)], bpm)
+    #         error.append(np.mean(abs(out[:len(bpm)]-bpm)))
+    #         bpms.append(bpm)
+    #     j+=1
+
+    fig = plt.figure()
+    time = tracked_points.time[:len(tracked_points.bpm)]
+    plt.plot(time, tracked_points.bpm)
+    plt.plot(out[:300])
+    plt.xlabel('Time (sec)')
+    plt.ylabel('BPM')
+    fig.savefig('/media/ncls/Rosbags/results_elo/graphs/' + name + '.png')
+    error = np.mean(abs(out[:len(tracked_points.bpm)]-tracked_points.bpm))
+
+    print('\nError: ' + str(error) + '\n')
+    pickle.dump((tracked_points.bpm, tracked_points.time, out, error), open('/media/ncls/Rosbags/results_elo/pickle/' + name + '.p', 'wb'))
 
     # idx = np.argsort(error)[0]
     # #time = [x - 0.1 for x in tracked_points.time[:len(bpms[idx])]]
